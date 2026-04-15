@@ -47,13 +47,52 @@ async function loadGuests() {
   }
 }
 
-// 加载签到记录
-function loadCheckins() {
-  return new Promise((resolve) => {
-    // 从 localStorage 读取
-    const saved = localStorage.getItem('signin_checkins');
+// 加载签到记录 - 从飞书多维表格读取
+async function loadCheckins() {
+  try {
+    // 1. 获取飞书 access token
+    const tokenResp = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_id: 'cli_a954d4628ef8dcde',
+        app_secret: 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT'
+      })
+    });
+    const tokenData = await tokenResp.json();
+    const tenantAccessToken = tokenData.tenant_access_token;
+    
+    // 2. 读取飞书表格记录
+    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${'ME8ZbWEXZamiShslX1lcBb5un9c'}/tables/${'tblLDOqsTrjFgH'}/records?page_size=500`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${tenantAccessToken}`
+      }
+    });
+    
+    const data = await response.json();
     let checkins = [];
     
+    if (data.code === 0 && data.data && data.data.items) {
+      checkins = data.data.items.map(item => {
+        return {
+          name: item.fields['姓名'] || '',
+          phone: item.fields['手机号码'] || '',
+          seat: item.fields['座位号'] || '',
+          time: new Date(item.fields['签到时间']).toISOString()
+        };
+      });
+    }
+    
+    renderCheckins(checkins);
+    updateStats(checkins);
+    resolve();
+  } catch(error) {
+    console.error('加载飞书记录失败', error);
+    // fallback to localStorage
+    let checkins = [];
+    const saved = localStorage.getItem('signin_checkins');
     if (saved) {
       try {
         checkins = JSON.parse(saved);
@@ -61,11 +100,10 @@ function loadCheckins() {
         checkins = [];
       }
     }
-    
     renderCheckins(checkins);
     updateStats(checkins);
     resolve();
-  });
+  }
 }
 
 // 渲染签到表格

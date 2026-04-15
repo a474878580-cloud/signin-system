@@ -121,7 +121,7 @@ function findGuest(name) {
   return found || null;
 }
 
-// 保存签到记录
+// 保存签到记录 - 同时保存到 localStorage + 飞书表格
 async function saveCheckin(name, phone, seat) {
   // 读取现有签到
   let checkins = [];
@@ -136,17 +136,69 @@ async function saveCheckin(name, phone, seat) {
   }
   
   // 添加新签到
-  checkins.push({
+  const newCheckin = {
     name: name,
     phone: phone,
     seat: seat,
     time: new Date().toISOString()
-  });
+  };
+  checkins.push(newCheckin);
   
   // 保存到 localStorage
   localStorage.setItem('signin_checkins', JSON.stringify(checkins));
   
+  // 保存到飞书多维表格
+  await saveCheckinToFeishu(name, phone, seat);
+  
   return Promise.resolve();
+}
+
+// 保存签到到飞书多维表格
+async function saveCheckinToFeishu(name, phone, seat) {
+  try {
+    // 1. 获取飞书 access token
+    const tokenResp = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_id: 'cli_a954d4628ef8dcde',
+        app_secret: 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT'
+      })
+    });
+    const tokenData = await tokenResp.json();
+    const tenantAccessToken = tokenData.tenant_access_token;
+    
+    // 2. 创建记录
+    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${'ME8ZbWEXZamiShslX1lcBb5un9c'}/tables/${'tblLDOqsTrjFgJHB'}/records`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${tenantAccessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          '姓名': name,
+          '座位号': seat,
+          '签到时间': Date.now(),
+          '已签到': true
+        }
+      })
+    });
+    
+    const result = await response.json();
+    console.log('飞书保存结果', result);
+    
+    if (result.code !== 0) {
+      console.error('飞书保存失败', result);
+    }
+    
+    return result;
+  } catch(error) {
+    console.error('保存到飞书失败', error);
+    return { error };
+  }
 }
 
 // 显示签到结果
