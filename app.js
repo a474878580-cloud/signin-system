@@ -44,12 +44,15 @@ checkinBtn.addEventListener('click', doCheckin);
 // 加载嘉宾名单
 async function loadGuests() {
   try {
-    const response = await fetch('data/guests.json?t=' + Date.now());
+    const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+    const url = base + 'data/guests.json?t=' + Date.now();
+    const response = await fetch(url);
     const data = await response.json();
     guests = data.guests || [];
   } catch (error) {
     console.error('加载嘉宾名单失败', error);
     guests = [];
+    showToast('加载嘉宾名单加载失败');
   }
 }
 
