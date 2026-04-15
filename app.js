@@ -83,23 +83,19 @@ async function doCheckin() {
     // 3. 保存签到记录
     await saveCheckin(name, phone, seat);
     
-    // 4. 语音欢迎，说出欢迎语
+    // 4. 语音欢迎，说出欢迎语（优雅语速）
     try {
-      // 播放背景音效
-      welcomeSound.currentTime = 0;
-      welcomeSound.play().catch(() => {});
-      
-      // 语音合成说出欢迎语
       const greeting = `${name}，欢迎签到成功，我会永远记住你的`;
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(greeting);
         utterance.lang = 'zh-CN';
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
+        utterance.rate = 0.8; // 放慢语速更优雅
+        utterance.pitch = 1.1; // 稍微升高一点音调更亲切
+        utterance.volume = 1.0;
         window.speechSynthesis.speak(utterance);
       }
     } catch(e) {
-      console.log('播放声音异常', e);
+      console.log('语音合成异常', e);
     }
     
     // 5. 显示结果
