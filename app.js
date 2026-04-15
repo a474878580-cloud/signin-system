@@ -158,7 +158,7 @@ function showResult(name, seat, isRegistered) {
   resultTitle.textContent = `欢迎你，${name}！`;
   
   if (isRegistered) {
-    resultMessage.textContent = '已成功签到，enjoy the lobster!';
+    resultMessage.textContent = '已成功签到';
   } else {
     resultMessage.textContent = '欢迎参加 OPC 龙虾大会';
   }

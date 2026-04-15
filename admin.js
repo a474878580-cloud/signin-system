@@ -107,9 +107,10 @@ function updateStats(checkins = []) {
   
   // 今日签到
   const today = new Date().toDateString();
-  const todayCount = checkins.filter(c => 
-    new Date(c.time).toDateString() === today
-  ).length;
+  const todayCount = checkins.filter(c => {
+    const checkinDate = new Date(c.time);
+    return checkinDate.toDateString() === today;
+  }).length;
   
   todayCountEl.textContent = todayCount;
 }
