@@ -1,16 +1,14 @@
 // OPC 龙虾大会 - 活动签到系统
-// 飞书多维表格集成
+// 纯前端 JSON 存储，无跨域问题
 
-// 飞书配置
-const FEISHU_APP_ID = 'cli_a954d4628ef8dcde';
-const FEISHU_APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
-const BITABLE_APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
-const BITABLE_TABLE_ID = 'tblLDOqsTrjFgJHB';
+// 全局变量
+let guests = [];
 
 // DOM 元素
 const checkinForm = document.getElementById('checkin-form');
 const checkinResult = document.getElementById('checkin-result');
 const nameInput = document.getElementById('name-input');
+const phoneInput = document.getElementById('phone-input');
 const checkinBtn = document.getElementById('checkin-btn');
 const loading = document.getElementById('loading');
 const resultIcon = document.getElementById('result-icon');
@@ -20,6 +18,11 @@ const seatInfo = document.getElementById('seat-info');
 const seatNumber = document.getElementById('seat-number');
 const backBtn = document.getElementById('back-btn');
 const welcomeSound = document.getElementById('welcome-sound');
+
+// 初始化：加载嘉宾名单
+document.addEventListener('DOMContentLoaded', function() {
+  loadGuests();
+});
 
 // 返回重新签到
 backBtn.addEventListener('click', function() {
@@ -38,11 +41,29 @@ nameInput.addEventListener('keypress', function(e) {
 // 点击签到
 checkinBtn.addEventListener('click', doCheckin);
 
+// 加载嘉宾名单
+async function loadGuests() {
+  try {
+    const response = await fetch('data/guests.json?t=' + Date.now());
+    const data = await response.json();
+    guests = data.guests || [];
+  } catch (error) {
+    console.error('加载嘉宾名单失败', error);
+    guests = [];
+  }
+}
+
 // 主签到流程
 async function doCheckin() {
   const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+  
   if (!name) {
     showToast('请输入姓名');
+    return;
+  }
+  if (!phone) {
+    showToast('请输入手机号码');
     return;
   }
 
@@ -50,33 +71,23 @@ async function doCheckin() {
   checkinBtn.disabled = true;
 
   try {
-    // 1. 获取飞书 access token
-    const token = await getAccessToken();
+    // 1. 查找嘉宾
+    const guest = findGuest(name);
     
-    // 2. 查询飞书表格中是否有这个名字
-    const records = await searchByName(token, name);
+    // 2. 获取座位
+    const seat = guest ? guest.seat : '前排';
     
-    // 3. 找到匹配的记录
-    let matchedRecord = null;
-    if (records && records.items && records.items.length > 0) {
-      // 模糊匹配
-      matchedRecord = records.items.find(item => {
-        const recordName = (item.fields['姓名'] || '').trim();
-        return recordName.includes(name) || name.includes(recordName);
-      });
-    }
-
-    // 4. 签到写入飞书表格
-    await createCheckinRecord(token, name, matchedRecord ? matchedRecord.fields['座位号'] : '前排');
-
-    // 5. 播放欢迎声音
+    // 3. 保存签到记录
+    await saveCheckin(name, phone, seat);
+    
+    // 4. 播放欢迎声音
     try {
       welcomeSound.currentTime = 0;
       welcomeSound.play().catch(e => console.log('播放声音失败'));
     } catch(e) {}
-
-    // 6. 显示结果
-    showResult(name, matchedRecord);
+    
+    // 5. 显示结果
+    showResult(name, seat, !!guest);
 
   } catch (error) {
     console.error('签到失败', error);
@@ -87,79 +98,61 @@ async function doCheckin() {
   }
 }
 
-// 获取飞书 access token
-async function getAccessToken() {
-  const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      app_id: FEISHU_APP_ID,
-      app_secret: FEISHU_APP_SECRET
-    })
-  });
-  const data = await response.json();
-  if (data.code !== 0) {
-    throw new Error('获取token失败: ' + data.msg);
-  }
-  return data.tenant_access_token;
+// 查找嘉宾（模糊匹配）
+function findGuest(name) {
+  name = name.trim();
+  // 精确匹配
+  let found = guests.find(g => g.name.trim() === name);
+  if (found) return found;
+  // 模糊匹配
+  found = guests.find(g => g.name.includes(name) || name.includes(g.name));
+  return found || null;
 }
 
-// 按姓名搜索飞书表格
-async function searchByName(token, name) {
-  // 使用飞书列表查询，然后前端过滤
-  const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${BITABLE_APP_TOKEN}/tables/${BITABLE_TABLE_ID}/records?page_size=100`;
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`
+// 保存签到记录
+async function saveCheckin(name, phone, seat) {
+  // 读取现有签到
+  let checkins = [];
+  try {
+    const savedLocal = localStorage.getItem('signin_checkins');
+    if (savedLocal) {
+      const data = JSON.parse(savedLocal);
+      checkins = Array.isArray(data) ? data : [];
     }
-  });
-  return await response.json();
-}
-
-// 创建签到记录
-async function createCheckinRecord(token, name, seat) {
-  const now = Date.now();
-  const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${BITABLE_APP_TOKEN}/tables/${BITABLE_TABLE_ID}/records`;
+  } catch(e) {
+    checkins = [];
+  }
   
-  const fields = {
-    '姓名': name,
-    '座位号': seat || '前排',
-    '签到时间': now,
-    '已签到': true
-  };
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ fields })
+  // 添加新签到
+  checkins.push({
+    name: name,
+    phone: phone,
+    seat: seat,
+    time: new Date().toISOString()
   });
-
-  return await response.json();
+  
+  // 保存到 localStorage
+  localStorage.setItem('signin_checkins', JSON.stringify(checkins));
+  
+  return Promise.resolve();
 }
 
 // 显示签到结果
-function showResult(name, record) {
+function showResult(name, seat, isRegistered) {
   checkinForm.classList.add('hidden');
   checkinResult.classList.remove('hidden');
 
-  if (record) {
-    // 找到座位
-    resultIcon.textContent = '🎉';
-    resultTitle.textContent = `欢迎你，${name}！`;
-    resultMessage.textContent = '已成功签到';
-    seatInfo.classList.remove('hidden');
-    seatNumber.textContent = record.fields['座位号'] || '前排';
+  resultIcon.textContent = '🎉';
+  resultTitle.textContent = `欢迎你，${name}！`;
+  
+  if (isRegistered) {
+    resultMessage.textContent = '已成功签到，enjoy the lobster!';
   } else {
-    // 没有找到，嘉宾
-    resultIcon.textContent = '👋';
-    resultTitle.textContent = `欢迎你，${name}！`;
     resultMessage.textContent = '欢迎参加 OPC 龙虾大会';
-    seatInfo.classList.remove('hidden');
-    seatNumber.textContent = '前排就座';
   }
+  
+  seatInfo.classList.remove('hidden');
+  seatNumber.textContent = seat;
 }
 
 // 显示 Toast 提示

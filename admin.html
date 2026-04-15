@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OPC 龙虾大会 - 签到后台管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media (max-width: 768px) {
+      html { font-size: 14px; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">🦞 OPC 龙虾大会</h1>
+      <p class="text-gray-600">签到后台管理 - 所有签到记录</p>
+    </header>
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-xl shadow p-6">
+        <p class="text-gray-500 text-sm">总签到人数</p>
+        <p id="total-count" class="text-4xl font-bold text-blue-600">0</p>
+      </div>
+      <div class="bg-white rounded-xl shadow p-6">
+        <p class="text-gray-500 text-sm">今日签到</p>
+        <p id="today-count" class="text-4xl font-bold text-green-600">0</p>
+      </div>
+      <div class="bg-white rounded-xl shadow p-6">
+        <p class="text-gray-500 text-sm">已注册嘉宾</p>
+        <p id="guest-count" class="text-4xl font-bold text-yellow-600">0</p>
+      </div>
+    </div>
+
+    <!-- 签到记录表格 -->
+    <div class="bg-white rounded-xl shadow p-6 mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold text-gray-800">📋 签到记录</h2>
+        <button id="refresh-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+          刷新
+        </button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b text-left">
+              <th class="py-3 px-2 font-semibold text-gray-700">姓名</th>
+              <th class="py-3 px-2 font-semibold text-gray-700">手机号</th>
+              <th class="py-3 px-2 font-semibold text-gray-700">座位</th>
+              <th class="py-3 px-2 font-semibold text-gray-700">签到时间</th>
+            </tr>
+          </thead>
+          <tbody id="checkin-table-body">
+            <!-- 动态填充 -->
+          </tbody>
+        </table>
+      </div>
+      <div id="empty-message" class="text-center text-gray-500 py-8 hidden">
+        暂无签到记录
+      </div>
+    </div>
+
+    <!-- 嘉宾名单管理 -->
+    <div class="bg-white rounded-xl shadow p-6 mb-8">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">👥 嘉宾名单</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full mb-4">
+          <thead>
+            <tr class="border-b text-left">
+              <th class="py-3 px-2 font-semibold text-gray-700">姓名</th>
+              <th class="py-3 px-2 font-semibold text-gray-700">座位</th>
+            </tr>
+          </thead>
+          <tbody id="guest-table-body">
+            <!-- 动态填充 -->
+          </tbody>
+        </table>
+      </div>
+      <p class="text-sm text-gray-500">
+        💡 提示：编辑 <code>data/guests.json</code> 文件可以添加/修改嘉宾和座位信息
+      </p>
+    </div>
+
+    <footer class="text-center text-gray-500 text-sm py-8">
+      <p><a href="index.html" class="text-blue-600 hover:underline">← 返回签到页面</a></p>
+      <p class="mt-2">🦞 OPC 龙虾大会 · 签到系统</p>
+    </footer>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
