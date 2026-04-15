@@ -1,4 +1,4 @@
-// 每日签到系统 - 核心逻辑
+// OPC 龙虾大会 - 活动签到系统 - 核心逻辑
 
 // 数据存储
 let data = {
@@ -20,15 +20,74 @@ const currentStreakEl = document.getElementById('current-streak');
 const maxStreakEl = document.getElementById('max-streak');
 const leaderboardEl = document.getElementById('leaderboard');
 const checkinSoundEl = document.getElementById('checkin-sound');
+const nameModalEl = document.getElementById('name-modal');
+const nameInputEl = document.getElementById('name-input');
+const nameSubmitEl = document.getElementById('name-submit');
+const toggleListBtn = document.getElementById('toggle-list');
+const checkinListEl = document.getElementById('checkin-list');
+const checkinTableBodyEl = document.getElementById('checkin-table-body');
 
-// 用户名（这里简化用 localStorage，实际可以改登录系统）
-const currentUsername = localStorage.getItem('signin_username') || prompt('请输入你的昵称：');
-if (!currentUsername) {
-  alert('需要输入昵称才能签到');
-} else {
-  localStorage.setItem('signin_username', currentUsername);
+// 当前用户名
+let currentUsername = localStorage.getItem('signin_username');
+
+// 添加动画样式
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fade-in-out {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+    100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  @keyframes fade-in {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in-out {
+    animation: fade-in-out 0.3s ease-out forwards;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out forwards;
+  }
+  .hidden {
+    display: none !important;
+  }
+`;
+document.head.appendChild(style);
+
+// 初始化
+if (currentUsername) {
+  nameModalEl.classList.add('hidden');
   init();
+} else {
+  nameModalEl.classList.remove('hidden');
 }
+
+// 提交昵称
+nameSubmitEl.addEventListener('click', function() {
+  const name = nameInputEl.value.trim();
+  if (!name) {
+    showToast('请输入昵称');
+    return;
+  }
+  currentUsername = name;
+  localStorage.setItem('signin_username', name);
+  nameModalEl.classList.add('hidden');
+  init();
+});
+
+// 回车提交
+nameInputEl.addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') {
+    nameSubmitEl.click();
+  }
+});
+
+// 切换名单显示
+toggleListBtn.addEventListener('click', function() {
+  checkinListEl.classList.toggle('hidden');
+  if (!checkinListEl.classList.contains('hidden')) {
+    renderCheckinList();
+  }
+});
 
 // 初始化
 function init() {
@@ -38,6 +97,9 @@ function init() {
   renderStats();
   renderLeaderboard();
   checkAlreadyCheckin();
+  if (!checkinListEl.classList.contains('hidden')) {
+    renderCheckinList();
+  }
 }
 
 // 格式化日期 YYYY-MM-DD
@@ -47,33 +109,6 @@ function formatDate(date) {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
-
-// 显示 Toast 提示
-function showToast(message) {
-  const toast = document.createElement('div');
-  toast.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-80 text-white px-6 py-3 rounded-xl shadow-2xl z-50 animate-fade-in-out';
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.5s';
-    setTimeout(() => toast.remove(), 500);
-  }, 2000);
-}
-
-// 添加动画样式
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes fade-in-out {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-.animate-fade-in-out {
-  animation: fade-in-out 0.3s ease-out forwards;
-}
-`;
-document.head.appendChild(style);
 
 // 加载数据
 function loadData() {
@@ -131,6 +166,11 @@ checkinBtn.addEventListener('click', function() {
     renderStats();
     renderLeaderboard();
     
+    // 刷新签到名单
+    if (!checkinListEl.classList.contains('hidden')) {
+      renderCheckinList();
+    }
+    
     // 好看的弹窗提示
     showToast('🎉 签到成功！连续签到 ' + data.users[currentUsername].currentStreak + ' 天');
   }
@@ -142,11 +182,7 @@ function updateUserStats(username) {
   user.totalDays = user.checkins.length;
 
   // 计算连续签到
-  const sortedCheckins = user.checkins.sort();
   let currentStreak = 0;
-  let maxStreak = 0;
-
-  // 从今天往前数
   let checkDate = new Date(today);
   while (true) {
     const dateStr = formatDate(checkDate);
@@ -159,24 +195,22 @@ function updateUserStats(username) {
   }
 
   // 计算最大连续
-  let tempStreak = 0;
-  let checkDates = user.checkins.map(d => new Date(d));
-  checkDates.sort((a, b) => b - a);
-
-  for (let i = 0; i < checkDates.length; i++) {
-    let streak = 1;
-    let currentDate = checkDates[i];
-    for (let j = i + 1; j < checkDates.length; j++) {
-      let expected = new Date(currentDate);
+  let maxStreak = 0;
+  if (user.checkins.length > 0) {
+    let sortedDates = user.checkins.map(d => new Date(d)).sort((a, b) => b - a);
+    let tempStreak = 1;
+    
+    for (let i = 0; i < sortedDates.length - 1; i++) {
+      let expected = new Date(sortedDates[i]);
       expected.setDate(expected.getDate() - 1);
-      if (formatDate(expected) === formatDate(checkDates[j])) {
-        streak++;
-        currentDate = expected;
+      if (formatDate(expected) === formatDate(sortedDates[i + 1])) {
+        tempStreak++;
+        maxStreak = Math.max(maxStreak, tempStreak);
       } else {
-        break;
+        tempStreak = 1;
       }
     }
-    maxStreak = Math.max(maxStreak, streak);
+    maxStreak = Math.max(maxStreak, tempStreak);
   }
 
   user.currentStreak = currentStreak;
@@ -200,7 +234,7 @@ function renderCalendar() {
 
   weekDays.forEach(day => {
     const div = document.createElement('div');
-    div.className = 'text-xs font-semibold text-gray-500 py-2';
+    div.className = 'text-xs font-semibold text-gray-500 py-2 text-center';
     div.textContent = day;
     calendarEl.appendChild(div);
   });
@@ -212,7 +246,7 @@ function renderCalendar() {
   // 填充前面的空格
   for (let i = 0; i < firstDayWeekday; i++) {
     const div = document.createElement('div');
-    div.className = 'h-8 bg-gray-50 rounded';
+    div.className = 'h-10 sm:h-8 bg-gray-50 rounded';
     calendarEl.appendChild(div);
   }
 
@@ -227,7 +261,7 @@ function renderCalendar() {
 
     const div = document.createElement('div');
     div.className = [
-      'h-8 rounded flex items-center justify-center text-sm',
+      'h-10 sm:h-8 rounded flex items-center justify-center text-sm',
       isChecked ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400',
       isToday ? 'ring-2 ring-blue-500' : ''
     ].filter(Boolean).join(' ');
@@ -297,4 +331,59 @@ function renderLeaderboard() {
     row.appendChild(right);
     leaderboardEl.appendChild(row);
   });
+}
+
+// 渲染签到名单表格（后台查看）
+function renderCheckinList() {
+  const users = Object.entries(data.users)
+    .sort((a, b) => b[1].totalDays - a[1].totalDays);
+
+  checkinTableBodyEl.innerHTML = '';
+
+  if (users.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.className = 'text-center py-4 text-gray-500';
+    td.textContent = '还没有人签到';
+    tr.appendChild(td);
+    checkinTableBodyEl.appendChild(tr);
+    return;
+  }
+
+  users.forEach(([username, stats]) => {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b hover:bg-gray-50';
+
+    const nameTd = document.createElement('td');
+    nameTd.className = 'py-2 px-2 text-left font-medium text-gray-800';
+    nameTd.textContent = username;
+
+    const totalTd = document.createElement('td');
+    totalTd.className = 'py-2 px-2 text-right text-gray-600';
+    totalTd.textContent = stats.totalDays;
+
+    const streakTd = document.createElement('td');
+    streakTd.className = 'py-2 px-2 text-right text-gray-600';
+    streakTd.textContent = stats.currentStreak;
+
+    tr.appendChild(nameTd);
+    tr.appendChild(totalTd);
+    tr.appendChild(streakTd);
+    checkinTableBodyEl.appendChild(tr);
+  });
+}
+
+// 显示 Toast 提示
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-80 text-white px-6 py-3 rounded-xl shadow-2xl z-50 animate-fade-in-out';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.5s';
+    setTimeout(() => toast.remove(), 500);
+  }, 2000);
 }
