@@ -19,6 +19,7 @@ const totalDaysEl = document.getElementById('total-days');
 const currentStreakEl = document.getElementById('current-streak');
 const maxStreakEl = document.getElementById('max-streak');
 const leaderboardEl = document.getElementById('leaderboard');
+const checkinSoundEl = document.getElementById('checkin-sound');
 
 // 用户名（这里简化用 localStorage，实际可以改登录系统）
 const currentUsername = localStorage.getItem('signin_username') || prompt('请输入你的昵称：');
@@ -46,6 +47,33 @@ function formatDate(date) {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+// 显示 Toast 提示
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-80 text-white px-6 py-3 rounded-xl shadow-2xl z-50 animate-fade-in-out';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.5s';
+    setTimeout(() => toast.remove(), 500);
+  }, 2000);
+}
+
+// 添加动画样式
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fade-in-out {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.animate-fade-in-out {
+  animation: fade-in-out 0.3s ease-out forwards;
+}
+`;
+document.head.appendChild(style);
 
 // 加载数据
 function loadData() {
@@ -91,11 +119,20 @@ checkinBtn.addEventListener('click', function() {
     data.users[currentUsername].checkins.push(todayStr);
     updateUserStats(currentUsername);
     saveData();
+    
+    // 播放签到成功声音
+    try {
+      checkinSoundEl.currentTime = 0;
+      checkinSoundEl.play().catch(e => console.log('播放声音失败'));
+    } catch(e) {}
+    
     checkAlreadyCheckin();
     renderCalendar();
     renderStats();
     renderLeaderboard();
-    alert('🎉 签到成功！');
+    
+    // 好看的弹窗提示
+    showToast('🎉 签到成功！连续签到 ' + data.users[currentUsername].currentStreak + ' 天');
   }
 });
 
@@ -161,7 +198,7 @@ function renderCalendar() {
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
   calendarEl.innerHTML = '';
 
-  weekdays.forEach(day => {
+  weekDays.forEach(day => {
     const div = document.createElement('div');
     div.className = 'text-xs font-semibold text-gray-500 py-2';
     div.textContent = day;
