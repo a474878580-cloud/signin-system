@@ -83,11 +83,17 @@ async function doCheckin() {
     // 3. 保存签到记录
     await saveCheckin(name, phone, seat);
     
-    // 4. 播放欢迎声音
+    // 4. 播放欢迎声音（用户点击后播放，符合浏览器政策）
     try {
       welcomeSound.currentTime = 0;
-      welcomeSound.play().catch(e => console.log('播放声音失败'));
-    } catch(e) {}
+      welcomeSound.play().then(() => {
+        console.log('声音播放成功');
+      }).catch((e) => {
+        console.log('声音播放失败，浏览器禁止自动播放', e);
+      });
+    } catch(e) {
+      console.log('播放声音异常', e);
+    }
     
     // 5. 显示结果
     showResult(name, seat, !!guest);
