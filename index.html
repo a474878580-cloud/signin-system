@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>每日签到系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <header class="text-center mb-8">
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">📅 每日签到</h1>
+      <p class="text-gray-600">简单好用的每日签到系统</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <!-- 签到卡片 -->
+      <div class="md:col-span-2 bg-white rounded-xl shadow-md p-6">
+        <div class="text-center mb-6">
+          <div id="today-date" class="text-2xl font-semibold text-gray-700 mb-2"></div>
+          <div id="checkin-status" class="text-lg text-gray-600 mb-4"></div>
+          <button id="checkin-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+            点击签到
+          </button>
+        </div>
+
+        <!-- 签到日历 -->
+        <div class="mt-8">
+          <h3 class="text-xl font-semibold text-gray-800 mb-4">签到日历</h3>
+          <div id="calendar" class="grid grid-cols-7 gap-1 text-center"></div>
+        </div>
+      </div>
+
+      <!-- 统计信息 -->
+      <div class="bg-white rounded-xl shadow-md p-6">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">📊 统计</h3>
+        <div class="space-y-4">
+          <div class="bg-blue-50 rounded-lg p-4">
+            <div class="text-sm text-gray-600">总签到天数</div>
+            <div id="total-days" class="text-3xl font-bold text-blue-600">0</div>
+          </div>
+          <div class="bg-green-50 rounded-lg p-4">
+            <div class="text-sm text-gray-600">连续签到</div>
+            <div id="current-streak" class="text-3xl font-bold text-green-600">0</div>
+          </div>
+          <div class="bg-yellow-50 rounded-lg p-4">
+            <div class="text-sm text-gray-600">最长连续</div>
+            <div id="max-streak" class="text-3xl font-bold text-yellow-600">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 排行榜 -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+      <h3 class="text-xl font-semibold text-gray-800 mb-4">🏆 排行榜</h3>
+      <div id="leaderboard" class="space-y-2"></div>
+    </div>
+
+    <footer class="text-center text-gray-500 text-sm">
+      <p>Built with OpenClaw 🦞</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
