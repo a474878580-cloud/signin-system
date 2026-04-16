@@ -118,8 +118,11 @@ async function doCheckin() {
     console.error('签到失败', error);
     showToast('签到失败，请重试');
   } finally {
-    loading.classList.add('hidden');
-    checkinBtn.disabled = false;
+    // 确保一定能结束加载状态
+    setTimeout(() => {
+      loading.classList.add('hidden');
+      checkinBtn.disabled = false;
+    }, 100);
   }
 }
 

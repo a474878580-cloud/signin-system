@@ -7,16 +7,22 @@
   <meta name="mobile-web-app-capable" content="yes">
   <title>OPC 龙虾大会 - 活动签到</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     /* 移动端优化 */
     @media (max-width: 768px) {
       html { font-size: 16px; }
       .container { padding-left: 12px; padding-right: 12px; }
+      input { font-size: 16px !important; } /* 防止iOS缩放 */
     }
     /* 按钮点击反馈 */
     button:active {
       transform: scale(0.95);
       transition: transform 0.1s;
+    }
+    /* 禁用双击缩放 */
+    * {
+      touch-action: manipulation;
     }
   </style>
 </head>
