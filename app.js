@@ -98,7 +98,15 @@ async function doCheckin() {
       console.log('语音合成异常', e);
     }
     
-    // 5. 显示结果
+    // 5. 播放签到成功提示音
+    try {
+      welcomeSound.currentTime = 0;
+      await welcomeSound.play();
+    } catch(e) {
+      console.log('播放提示音失败', e);
+    }
+    
+    // 6. 显示结果
     showResult(name, seat, !!guest);
 
   } catch (error) {
@@ -154,32 +162,48 @@ async function saveCheckin(name, phone, seat) {
 }
 
 // 保存签到到飞书多维表格
+// 使用你提供的 app_token 和 table_id
 async function saveCheckinToFeishu(name, phone, seat) {
   try {
-    // 1. 获取飞书 access token
-    const tokenResp = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    const APP_ID = 'cli_a954d4628ef8dcde';
+    const APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
+    const APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
+    const TABLE_ID = 'tblLDOqsTrjFgJHB';
+    
+    // 1. 先获取 access_token - 使用 cors-anywhere 代理解决跨域问题
+    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+    const tokenUrl = proxyUrl + 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
+    
+    const tokenResp = await fetch(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        app_id: 'cli_a954d4628ef8dcde',
-        app_secret: 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT'
+        app_id: APP_ID,
+        app_secret: APP_SECRET
       })
     });
+    
     const tokenData = await tokenResp.json();
-    const tenantAccessToken = tokenData.tenant_access_token;
+    const token = tokenData.tenant_access_token;
     
-    // 2. 创建记录
-    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${'ME8ZbWEXZamiShslX1lcBb5un9c'}/tables/${'tblLDOqsTrjFgJHB'}/records`;
+    if (!token) {
+      console.error('获取飞书 token 失败', tokenData);
+      return { error: '获取 token 失败' };
+    }
     
-    const response = await fetch(url, {
+    // 2. 添加记录到表格
+    const recordUrl = proxyUrl + `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${TABLE_ID}/records`;
+    
+    const response = await fetch(recordUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${tenantAccessToken}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         fields: {
           '姓名': name,
+          '手机号码': phone,
           '座位号': seat,
           '签到时间': Date.now(),
           '已签到': true
@@ -190,14 +214,22 @@ async function saveCheckinToFeishu(name, phone, seat) {
     const result = await response.json();
     console.log('飞书保存结果', result);
     
-    if (result.code !== 0) {
+    if (result.code === 0) {
+      console.log('✓ 签到已成功保存到飞书多维表格');
+      return { success: true, data: result };
+    } else {
       console.error('飞书保存失败', result);
+      return { error: result.msg };
     }
     
-    return result;
   } catch(error) {
-    console.error('保存到飞书失败', error);
-    return { error };
+    console.error('保存到飞书失败，数据已保存在本地', error);
+    console.log('
+解决跨域方案：
+1. 使用公共 cors 代理（已配置，如上面代码）
+2. 或者自己部署 cors 代理
+3. 或者使用云函数做中转');
+    return { error: error.message };
   }
 }
 
