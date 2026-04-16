@@ -1,5 +1,13 @@
 // OPC 龙虾大会 - 后台管理
-// 从 Vercel API 获取飞书表格中的签到数据
+// 纯静态 + 飞书机器人方案
+// 国内访问 GitHub Pages 稳定
+
+// ========== 飞书配置 ==========
+const FEISHU_APP_ID = 'cli_a954d4628ef8dcde';
+const FEISHU_APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
+const FEISHU_APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
+const FEISHU_TABLE_ID = 'tblLDOqsTrjFgJHB';
+// ========== 配置结束 ==========
 
 // DOM
 const totalCountEl = document.getElementById('total-count');
@@ -16,12 +24,27 @@ refreshBtn.addEventListener('click', loadData);
 // 页面加载
 document.addEventListener('DOMContentLoaded', loadData);
 
-// 获取 API 地址
-function getApiBase() {
-  if (window.location.host.includes('localhost')) {
-    return 'http://localhost:3000';
+// 获取飞书 token
+async function getFeishuToken() {
+  try {
+    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+    const url = proxyUrl + 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_id: FEISHU_APP_ID,
+        app_secret: FEISHU_APP_SECRET
+      })
+    });
+    
+    const data = await response.json();
+    return data.tenant_access_token;
+  } catch(e) {
+    console.error('获取飞书 token 失败', e);
+    return null;
   }
-  return `https://${window.location.host}`;
 }
 
 // 加载所有数据
@@ -62,16 +85,39 @@ async function loadGuests() {
   }
 }
 
-// 加载签到记录 - 从 Vercel API 获取
+// 加载签到记录 - 从飞书多维表格读取
 async function loadCheckins() {
   return new Promise(async (resolve) => {
     try {
-      const apiBase = getApiBase();
-      const response = await fetch(`${apiBase}/api/get-checkins`);
-      const data = await response.json();
-      let checkins = data.checkins || [];
+      const token = await getFeishuToken();
+      if (!token) {
+        throw new Error('获取飞书 token 失败');
+      }
       
-      console.log('从 API 加载了', checkins.length, '条签到记录');
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const url = proxyUrl + `https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU_APP_TOKEN}/tables/${FEISHU_TABLE_ID}/records?page_size=500`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      const data = await response.json();
+      let checkins = [];
+      
+      if (data.code === 0 && data.data && data.data.items) {
+        checkins = data.data.items.map(item => {
+          const fields = item.fields || {};
+          return {
+            name: fields['姓名'] || '',
+            phone: fields['手机号码'] || fields['手机'] || '',
+            seat: fields['座位号'] || '',
+            time: fields['签到时间'] ? new Date(fields['签到时间']).toISOString() : new Date().toISOString()
+          };
+        });
+        console.log('从飞书表格加载了', checkins.length, '条签到记录');
+      }
       
       // 合并本地记录
       const saved = localStorage.getItem('signin_checkins');
@@ -93,7 +139,7 @@ async function loadCheckins() {
       updateStats(checkins);
       resolve(checkins);
     } catch(error) {
-      console.error('加载记录失败，使用本地缓存', error);
+      console.error('加载飞书记录失败，使用本地缓存', error);
       // fallback to localStorage
       let checkins = [];
       const saved = localStorage.getItem('signin_checkins');
@@ -107,6 +153,9 @@ async function loadCheckins() {
       renderCheckins(checkins);
       updateStats(checkins);
       resolve(checkins);
+      
+      // 提示用户申请 cors-anywhere 权限
+      showToast('如果看不到数据，请先打开 https://cors-anywhere.herokuapp.com/ 申请临时权限');
     }
   });
 }
@@ -169,7 +218,7 @@ function showToast(message) {
     toast.style.opacity = '0';
     toast.style.transition = 'opacity 0.5s';
     setTimeout(() => toast.remove(), 500);
-  }, 2000);
+  }, 3000);
 }
 
 // 添加动画样式
