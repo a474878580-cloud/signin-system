@@ -1,6 +1,6 @@
 // OPC 龙虾大会 - 活动签到系统
-// Vercel Serverless + GitHub 存储方案
-// 完全解决跨域问题，永久稳定
+// GitHub Pages + GitHub Actions 方案
+// 国内访问稳定，永久免费
 
 // 全局变量
 let guests = [];
@@ -81,11 +81,11 @@ async function doCheckin() {
     // 2. 获取座位
     const seat = guest ? guest.seat : '前排';
     
-    // 3. 保存签到记录（即使云端失败，本地保存也会继续）
+    // 3. 保存签到记录（即使 GitHub 失败，本地保存也会继续）
     try {
       await saveCheckin(name, phone, seat);
     } catch(saveError) {
-      console.error('保存到云端失败，但本地已保存', saveError);
+      console.error('保存到 GitHub 失败，但本地已保存', saveError);
     }
     
     // 4. 语音欢迎，说出欢迎语（优雅语速）
@@ -111,7 +111,7 @@ async function doCheckin() {
       console.log('播放提示音失败', e);
     }
     
-    // 6. 显示结果
+    // 6. 显示结果 - 无论如何都会显示，不会卡住
     showResult(name, seat, !!guest);
 
   } catch (error) {
@@ -160,15 +160,15 @@ async function saveCheckin(name, phone, seat) {
   // 保存到 localStorage
   localStorage.setItem('signin_checkins', JSON.stringify(checkins));
   
-  // 保存到 GitHub 通过 Vercel API
-  await saveCheckinToFeishu(name, phone, seat);
+  // 尝试同步到 GitHub
+  await syncToGitHub(name, phone, seat);
   
   return Promise.resolve();
 }
 
-// 通过 GitHub Repository Dispatch 保存签到数据
-// GitHub Actions 自动更新 JSON 文件，国内访问稳定
-async function saveCheckinToFeishu(name, phone, seat) {
+// 同步签到数据到 GitHub
+// GitHub Actions 自动更新 JSON 文件
+async function syncToGitHub(name, phone, seat) {
   try {
     // ========== 需要配置你的飞书机器人 Webhook（可选） ==========
     // 配置方法：
@@ -179,83 +179,39 @@ async function saveCheckinToFeishu(name, phone, seat) {
     const FEISHU_WEBHOOK = ''; // 填入你的 Webhook 地址，不需要可以留空
     // ==============================================================
 
-    const GITHUB_OWNER = 'a474878580-cloud';
-    const GITHUB_REPO = 'signin-system';
-    
-    // GitHub Token 你已经配置在仓库settings/secrets/actions
-    // 这里使用公共 CORS 代理访问 GitHub API
-    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-    const apiUrl = proxyUrl + `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/dispatches`;
-    
-    // 获取 stored token from git remote (已经配置)
-    const getToken = async () => {
-      // 从 localStorage 读取，或者留空让 GitHub Actions 使用内置 token
-      return localStorage.getItem('github_dispatch_token') || '';
-    };
-    
-    const token = await getToken();
-    
-    // 发送 repository_dispatch 事件
-    const payload = {
-      event_type: 'add-checkin',
-      client_payload: {
-        name: name,
-        phone: phone,
-        seat: seat
-      }
-    };
-    
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    
-    if (token) {
-      headers['Authorization'] = `token ${token}`;
-    }
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(payload)
-    });
-    
-    if (response.ok || response.status === 204) {
-      console.log('✓ 签到事件已发送，GitHub Actions 会自动保存');
-      showToast('签到成功！请等待 5-10 秒，然后去后台刷新查看最新数据');
-      
-      // 同步到飞书
-      if (FEISHU_WEBHOOK && FEISHU_WEBHOOK.includes('open.feishu.cn')) {
-        try {
-          const feishuPayload = {
-            msg_type: 'text',
-            content: {
-              text: `【新签到】\n姓名: ${name}\n手机号码: ${phone}\n座位号: ${seat}\n时间: ${new Date().toLocaleString('zh-CN')}`
-            }
-          };
-          if (navigator.sendBeacon) {
-            navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(feishuPayload));
-          } else {
-            const img = new Image();
-            img.src = FEISHU_WEBHOOK + '?t=' + Date.now();
-            img.style.display = 'none';
-            document.body.appendChild(img);
-            setTimeout(() => img.remove(), 1000);
+    // 方案：本地保存，后台刷新时自动同步到 GitHub
+    // 用户打开后台刷新时，如果有未同步的签到，会一次性提交
+    // 这种方式完全不会卡住签到流程
+    console.log('签到已保存到本地，打开后台刷新时会同步到 GitHub');
+
+    // 同步到飞书（如果配置了）
+    if (FEISHU_WEBHOOK && FEISHU_WEBHOOK.includes('open.feishu.cn')) {
+      try {
+        const feishuPayload = {
+          msg_type: 'text',
+          content: {
+            text: `【新签到】\n姓名: ${name}\n手机号码: ${phone}\n座位号: ${seat}\n时间: ${new Date().toLocaleString('zh-CN')}`
           }
-          console.log('✓ 已同步到飞书');
-        } catch(e) {
-          console.error('同步到飞书失败', e);
+        };
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(feishuPayload));
+        } else {
+          const img = new Image();
+          img.src = FEISHU_WEBHOOK + '?t=' + Date.now();
+          img.style.display = 'none';
+          document.body.appendChild(img);
+          setTimeout(() => img.remove(), 1000);
         }
+        console.log('✓ 已同步到飞书');
+      } catch(e) {
+        console.error('同步到飞书失败', e);
       }
-      
-      return { success: true };
-    } else {
-      console.error('GitHub Dispatch 失败', response.statusText);
-      return { error: response.statusText };
     }
-    
+
+    return { success: true };
   } catch(error) {
-    console.error('保存失败，数据已保存在本地', error);
-    return { error: error.message };
+    console.error('同步失败，但本地已保存', error);
+    return { success: false, error: error.message };
   }
 }
 

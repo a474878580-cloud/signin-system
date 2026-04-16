@@ -1,0 +1,86 @@
+name: Sync Checkins
+
+on:
+  repository_dispatch:
+    types: [add-checkin, sync-checkins]
+
+jobs:
+  sync-checkins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Sync checkins
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+import json
+import os
+
+event = os.getenv('GITHUB_EVENT_PATH')
+with open(event, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+event_type = data['event_type']
+client_payload = data['client_payload']
+
+FILE = "data/checkins.json"
+
+# Read existing checkins
+if os.path.exists(FILE):
+    with open(FILE, 'r', encoding='utf-8') as f:
+        try:
+            checkins = json.load(f)
+        except:
+            checkins = []
+else:
+    checkins = []
+
+# Handle batch sync or single add
+if 'checkins' in client_payload:
+    # Batch sync from localStorage
+    batch_checkins = client_payload['checkins']
+    print(f"Syncing {len(batch_checkins)} checkins from batch...")
+    # Merge, avoid duplicates by phone
+    for new_checkin in batch_checkins:
+        exists = any(c.get('phone') == new_checkin['phone'] and c.get('name') == new_checkin['name'] for c in checkins)
+        if not exists:
+            if 'time' not in new_checkin:
+                new_checkin['time'] = __import__('datetime').datetime.utcnow().isoformat()
+            checkins.append(new_checkin)
+elif 'name' in client_payload and 'phone' in client_payload:
+    # Single checkin add
+    name = client_payload['name']
+    phone = client_payload['phone']
+    seat = client_payload.get('seat', '前排')
+    
+    print(f"Adding single checkin: {name} ({phone})")
+    
+    new_checkin = {
+        "name": name,
+        "phone": phone,
+        "seat": seat,
+        "time": __import__('datetime').datetime.utcnow().isoformat()
+    }
+    
+    checkins.append(new_checkin)
+else:
+    print("No checkin data found, exiting")
+    exit(0)
+
+# Save back
+with open(FILE, 'w', encoding='utf-8') as f:
+    json.dump(checkins, f, indent=2, ensure_ascii=False)
+
+print(f"Total {len(checkins)} checkins now")
+EOF
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Sync checkins - $(date +'%Y-%m-%d %H:%M:%S')"
+          file_pattern: data/checkins.json

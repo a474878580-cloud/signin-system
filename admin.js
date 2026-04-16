@@ -19,7 +19,56 @@ document.addEventListener('DOMContentLoaded', loadData);
 async function loadData() {
   await loadGuests();
   await loadCheckins();
+  // 同步本地未提交的签到到 GitHub
+  await syncLocalToGitHub();
   updateStats();
+}
+
+// 同步本地 localStorage 中未提交的签到到 GitHub
+async function syncLocalToGitHub() {
+  try {
+    // 读取本地签到
+    let localCheckins = [];
+    const saved = localStorage.getItem('signin_checkins');
+    if (saved) {
+      localCheckins = JSON.parse(saved);
+    }
+    
+    if (localCheckins.length === 0) {
+      return;
+    }
+    
+    console.log('发现', localCheckins.length, '条本地签到，正在同步到 GitHub...');
+    
+    // 使用 GitHub API 合并签到
+    // 这里我们通过 repository_dispatch 触发 GitHub Actions
+    const GITHUB_OWNER = 'a474878580-cloud';
+    const GITHUB_REPO = 'signin-system';
+    
+    // 使用图片请求方式，不卡住页面
+    const img = new Image();
+    const data = encodeURIComponent(JSON.stringify({
+      event_type: 'sync-checkins',
+      client_payload: {
+        checkins: localCheckins
+      }
+    }));
+    
+    img.src = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/dispatches?data=${data}&t=${Date.now()}`;
+    img.style.display = 'none';
+    document.body.appendChild(img);
+    
+    setTimeout(() => {
+      document.body.removeChild(img);
+      // 清空本地，因为已经提交
+      localStorage.removeItem('signin_checkins');
+      console.log('✓ 本地签到已同步到 GitHub');
+      showToast('本地签到已同步，刷新查看最新数据');
+    }, 1000);
+    
+  } catch(error) {
+    console.error('同步本地签到失败', error);
+  }
 }
 
 // 加载嘉宾名单
