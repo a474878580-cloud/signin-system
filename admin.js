@@ -47,67 +47,34 @@ async function loadGuests() {
   }
 }
 
-// 加载签到记录 - 从飞书多维表格读取
+// 加载签到记录 - 从 GitHub JSON 文件读取
+// 这种方式完全没有跨域问题，数据永久保存在仓库
 async function loadCheckins() {
   return new Promise(async (resolve) => {
     try {
-      const APP_ID = 'cli_a954d4628ef8dcde';
-      const APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
-      const APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
-      const TABLE_ID = 'tblLDOqsTrjFgJHB';
+      // 直接读取 data/checkins.json 文件，GitHub Pages 托管，完全没问题
+      const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+      const url = base + 'data/checkins.json?t=' + Date.now();
       
-      // 使用 CORS 代理解决跨域问题
-      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-      
-      // 1. 获取飞书 access token
-      const tokenResp = await fetch(proxyUrl + 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          app_id: APP_ID,
-          app_secret: APP_SECRET
-        })
-      });
-      const tokenData = await tokenResp.json();
-      const tenantAccessToken = tokenData.tenant_access_token;
-      
-      if (!tenantAccessToken) {
-        throw new Error('获取 token 失败: ' + JSON.stringify(tokenData));
-      }
-      
-      // 2. 读取飞书表格记录
-      const url = proxyUrl + `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${TABLE_ID}/records?page_size=500`;
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${tenantAccessToken}`
-        }
-      });
-      
-      const data = await response.json();
+      const response = await fetch(url);
       let checkins = [];
       
-      if (data.code === 0 && data.data && data.data.items) {
-        checkins = data.data.items.map(item => {
-          const fields = item.fields || {};
-          return {
-            name: fields['姓名'] || '',
-            phone: fields['手机号码'] || fields['手机'] || '',
-            seat: fields['座位号'] || '',
-            time: fields['签到时间'] ? new Date(fields['签到时间']).toISOString() : new Date().toISOString()
-          };
-        });
-        console.log('从飞书表格加载了', checkins.length, '条签到记录');
+      if (response.ok) {
+        checkins = await response.json();
+        console.log('从 data/checkins.json 加载了', checkins.length, '条签到记录');
+      } else {
+        console.log('data/checkins.json 不存在，使用本地缓存');
+        checkins = [];
       }
       
-      // 同时合并 localStorage 的签到记录
+      // 同时合并 localStorage 中未提交的记录
       const saved = localStorage.getItem('signin_checkins');
       if (saved) {
         try {
           const localCheckins = JSON.parse(saved);
-          // 合并去重
+          // 合并去重（按手机号去重）
           localCheckins.forEach(local => {
-            const exists = checkins.find(c => c.phone === local.phone);
+            const exists = checkins.find(c => c.phone === local.phone && c.name === local.name);
             if (!exists) {
               checkins.push(local);
             }
@@ -121,7 +88,7 @@ async function loadCheckins() {
       updateStats(checkins);
       resolve(checkins);
     } catch(error) {
-      console.error('加载飞书记录失败，使用本地缓存', error);
+      console.error('加载记录失败，使用本地缓存', error);
       // fallback to localStorage
       let checkins = [];
       const saved = localStorage.getItem('signin_checkins');
