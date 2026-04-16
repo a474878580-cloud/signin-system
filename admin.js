@@ -53,6 +53,7 @@ async function loadCheckins() {
   return new Promise(async (resolve) => {
     try {
       // 直接读取 data/checkins.json 文件
+      // 添加时间戳绕过缓存，确保拿到最新数据
       const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
       const url = base + 'data/checkins.json?t=' + Date.now();
       

@@ -221,6 +221,7 @@ async function saveCheckinToFeishu(name, phone, seat) {
     
     if (response.ok || response.status === 204) {
       console.log('✓ 签到事件已发送，GitHub Actions 会自动保存');
+      showToast('签到成功！请等待 5-10 秒，然后去后台刷新查看最新数据');
       
       // 同步到飞书
       if (FEISHU_WEBHOOK && FEISHU_WEBHOOK.includes('open.feishu.cn')) {
