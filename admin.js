@@ -1,4 +1,12 @@
 // OPC 龙虾大会 - 后台管理
+// 数据从飞书表格读取
+
+// ========== 配置 ==========
+const FEISHU_APP_ID = 'cli_a954d4628ef8dcde';
+const FEISHU_APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
+const FEISHU_APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
+const FEISHU_TABLE_ID = 'tblLDOqsTrjFgJHB';
+// ========== 配置结束 ==========
 
 // DOM
 const totalCountEl = document.getElementById('total-count');
@@ -15,71 +23,40 @@ refreshBtn.addEventListener('click', loadData);
 // 页面加载
 document.addEventListener('DOMContentLoaded', loadData);
 
-// 加载所有数据
-async function loadData() {
-  await loadGuests();
-  await loadCheckins();
-  // 同步本地未提交的签到到 GitHub
-  await syncLocalToGitHub();
-  updateStats();
-}
-
-// 同步本地 localStorage 中未提交的签到到 GitHub
-async function syncLocalToGitHub() {
+// 获取飞书 token
+async function getFeishuToken() {
   try {
-    // 读取本地签到
-    let localCheckins = [];
-    const saved = localStorage.getItem('signin_checkins');
-    if (saved) {
-      localCheckins = JSON.parse(saved);
-    }
-    
-    if (localCheckins.length === 0) {
-      return;
-    }
-    
-    console.log('发现', localCheckins.length, '条本地签到，正在同步到 GitHub...');
-    showToast('正在同步本地签到到 GitHub...');
-    
-    const GITHUB_OWNER = 'a474878580-cloud';
-    const GITHUB_REPO = 'signin-system';
-    
-    // 使用 CORS 代理访问 GitHub API
     const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-    const apiUrl = proxyUrl + `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/dispatches`;
+    const url = proxyUrl + 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
     
-    const payload = {
-      event_type: 'sync-checkins',
-      client_payload: {
-        checkins: localCheckins
-      }
-    };
-    
-    const response = await fetch(apiUrl, {
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_id: FEISHU_APP_ID,
+        app_secret: FEISHU_APP_SECRET
+      })
     });
     
-    if (response.ok || response.status === 204) {
-      // 同步成功，清空本地
-      localStorage.removeItem('signin_checkins');
-      console.log('✓ 本地签到已同步到 GitHub');
-      showToast('✓ 同步完成！刷新查看最新数据');
-      // 重新加载数据
-      setTimeout(() => {
-        location.reload();
-      }, 1500);
-    } else {
-      console.error('同步失败', response.statusText);
-      showToast('同步失败，请稍后再试，数据还在本地');
-    }
-    
-  } catch(error) {
-    console.error('同步本地签到失败', error);
-    showToast('同步出错，数据保存在本地');
+    const data = await response.json();
+    return data.tenant_access_token;
+  } catch(e) {
+    console.error('获取飞书 token 失败', e);
+    return null;
   }
+}
+
+// 加载所有数据
+async function loadData() {
+  refreshBtn.disabled = true;
+  refreshBtn.textContent = '加载中...';
+  
+  await loadGuests();
+  await loadCheckins();
+  updateStats();
+  
+  refreshBtn.disabled = false;
+  refreshBtn.textContent = '🔄 刷新';
 }
 
 // 加载嘉宾名单
@@ -107,33 +84,45 @@ async function loadGuests() {
   }
 }
 
-// 加载签到记录 - 直接从 GitHub Pages 读取 JSON
-// GitHub Pages 国内访问稳定，永远是最新数据
+// 加载签到记录 - 从飞书多维表格读取
 async function loadCheckins() {
   return new Promise(async (resolve) => {
     try {
-      // 直接读取 data/checkins.json 文件
-      // 添加时间戳绕过缓存，确保拿到最新数据
-      const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
-      const url = base + 'data/checkins.json?t=' + Date.now();
-      
-      const response = await fetch(url);
-      let checkins = [];
-      
-      if (response.ok) {
-        checkins = await response.json();
-        console.log('从 data/checkins.json 加载了', checkins.length, '条签到记录');
-      } else {
-        console.log('data/checkins.json 不存在或加载失败，使用本地缓存');
-        checkins = [];
+      const token = await getFeishuToken();
+      if (!token) {
+        throw new Error('获取飞书 token 失败');
       }
       
-      // 同时合并 localStorage 中未提交的记录
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const url = proxyUrl + `https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU_APP_TOKEN}/tables/${FEISHU_TABLE_ID}/records?page_size=500`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      const data = await response.json();
+      let checkins = [];
+      
+      if (data.code === 0 && data.data && data.data.items) {
+        checkins = data.data.items.map(item => {
+          const fields = item.fields || {};
+          return {
+            name: fields['姓名'] || '',
+            phone: fields['手机号码'] || fields['手机'] || '',
+            seat: fields['座位号'] || '',
+            time: fields['签到时间'] ? new Date(fields['签到时间']).toISOString() : new Date().toISOString()
+          };
+        });
+        console.log('从飞书表格加载了', checkins.length, '条签到记录');
+      }
+      
+      // 合并本地记录
       const saved = localStorage.getItem('signin_checkins');
       if (saved) {
         try {
           const localCheckins = JSON.parse(saved);
-          // 合并去重（按手机号去重）
           localCheckins.forEach(local => {
             const exists = checkins.find(c => c.phone === local.phone && c.name === local.name);
             if (!exists) {
@@ -149,7 +138,7 @@ async function loadCheckins() {
       updateStats(checkins);
       resolve(checkins);
     } catch(error) {
-      console.error('加载记录失败，使用本地缓存', error);
+      console.error('加载飞书记录失败，使用本地缓存', error);
       // fallback to localStorage
       let checkins = [];
       const saved = localStorage.getItem('signin_checkins');
@@ -213,3 +202,40 @@ function updateStats(checkins = []) {
   
   todayCountEl.textContent = todayCount;
 }
+
+// 显示 Toast 提示
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-80 text-white px-6 py-3 rounded-xl shadow-2xl z-50 animate-fade-in-out';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.5s';
+    setTimeout(() => toast.remove(), 500);
+  }, 2000);
+}
+
+// 添加动画样式
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fade-in-out {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+    100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  @keyframes fade-in {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in-out {
+    animation: fade-in-out 0.3s ease-out forwards;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out forwards;
+  }
+  .hidden {
+    display: none !important;
+  }
+`;
+document.head.appendChild(style);
