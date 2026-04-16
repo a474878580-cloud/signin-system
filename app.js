@@ -166,12 +166,72 @@ async function saveCheckin(name, phone, seat) {
   return Promise.resolve();
 }
 
-// 保存签到记录到 GitHub JSON 文件
-// 完全绕过跨域问题，永久稳定，数据永远在仓库里
+// 同步签到数据到飞书
+// 使用飞书机器人 Webhook，通过飞书自动化自动写入多维表格
+async function syncCheckinToFeishu(name, phone, seat) {
+  try {
+    // ========== 需要配置你的飞书机器人 Webhook ==========
+    // 配置方法：
+    // 1. 在飞书创建群，添加「群机器人」，获取 Webhook URL
+    // 2. 在飞书群 → 设置 → 群机器人 → 找到你的机器人 → 添加自动化
+    // 3. 触发条件：机器人收到消息 → 执行操作：飞书多维表格 → 添加记录
+    // 4. 绑定你的签到表格，设置字段映射即可
+    const FEISHU_WEBHOOK = ''; // 在此填入你的 Webhook 地址
+    // ======================================================
+
+    if (!FEISHU_WEBHOOK || !FEISHU_WEBHOOK.includes('open.feishu.cn')) {
+      console.log('未配置飞书 Webhook，仅保存到 GitHub');
+      return { skipped: true };
+    }
+
+    // 使用 no-cors 模式发送，不阻塞签到流程
+    const payload = {
+      msg_type: 'text',
+      content: {
+        text: `新签到\n姓名: ${name}\n手机号码: ${phone}\n座位号: ${seat}\n签到时间: ${new Date().toLocaleString('zh-CN')}`
+      }
+    };
+
+    // 使用 beacon 发送，页面跳转也能完成，不阻塞
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(payload));
+      console.log('已发送签到信息到飞书');
+    } else {
+      // fallback 使用图片请求
+      const img = new Image();
+      img.src = FEISHU_WEBHOOK + '?t=' + Date.now();
+      img.style.display = 'none';
+      document.body.appendChild(img);
+      setTimeout(() => img.remove(), 1000);
+    }
+
+    return { success: true };
+  } catch(error) {
+    console.error('同步到飞书失败', error);
+    return { error: error.message };
+  }
+}
+
+// 保存签到记录到 GitHub JSON 文件 + 同步到飞书
 async function saveCheckinToFeishu(name, phone, seat) {
   try {
-    // 方案：使用 GitHub API 直接更新 JSON 文件
-    // 你的 GitHub Token 会从远程 URL 中获取（推送时已经配置）
+    // 1. 保存到 GitHub
+    const result = await saveCheckinToGitHub(name, phone, seat);
+    
+    // 2. 同步到飞书（异步不阻塞）
+    syncCheckinToFeishu(name, phone, seat);
+    
+    return result;
+  } catch(error) {
+    console.error('保存失败', error);
+    return { error: error.message };
+  }
+}
+
+// 保存签到到 GitHub
+async function saveCheckinToGitHub(name, phone, seat) {
+  try {
+    // 获取仓库信息
     const repoUrl = window.location.origin + window.location.pathname;
     const match = repoUrl.match(/https?:\/\/github.com\/([^\/]+)\/([^\/]+)/) || 
                   repoUrl.match(/https?:\/\/([^\.]+)\.github\.io\/([^\/]+)/);
@@ -179,22 +239,21 @@ async function saveCheckinToFeishu(name, phone, seat) {
     const REPO = match ? match[2] : 'signin-system';
     const FILE_PATH = 'data/checkins.json';
     
-    // 从当前远程 URL 获取 token
-    const getTokenFromRemote = async () => {
-      try {
-        const response = await fetch(window.location.origin + '/.git/config');
-        const text = await response.text();
-        const tokenMatch = text.match(/https?:\/\/([^:]+)@github.com/);
-        return tokenMatch ? tokenMatch[1] : '';
-      } catch(e) {
-        return '';
+    // 从远程 URL 获取 token
+    let TOKEN = '';
+    try {
+      // token 已经配置在 git remote 中
+      const remoteResponse = await fetch(window.location.origin + '/.git/config');
+      const remoteText = await remoteResponse.text();
+      const tokenMatch = remoteText.match(/https?:\/\/([^:]+)@github.com/);
+      if (tokenMatch) {
+        TOKEN = tokenMatch[1];
       }
-    };
+    } catch(e) {
+      console.log('无法从 git config 获取 token');
+    }
     
-    let TOKEN = await getTokenFromRemote();
     if (!TOKEN) {
-      // 如果无法获取，使用硬编码（你之前提供的 token）
-      // GitHub secret scanning 已经报警过了，所以这里不直接写
       console.log('未找到 GitHub Token，无法自动保存到仓库');
       return { skipped: true };
     }
@@ -229,7 +288,8 @@ async function saveCheckinToFeishu(name, phone, seat) {
     });
     
     // 提交更新到 GitHub
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(checkins, null, 2))));
+    const contentStr = JSON.stringify(checkins, null, 2);
+    const content = btoa(unescape(encodeURIComponent(contentStr)));
     
     const body = {
       message: `Add checkin: ${name} - ${new Date().toLocaleString('zh-CN')}`,
@@ -250,7 +310,8 @@ async function saveCheckinToFeishu(name, phone, seat) {
     });
     
     const result = await response.json();
-    console.log('GitHub 更新成功，签到已保存到 data/checkins.json');
+    console.log('✓ GitHub 更新成功');
+    
     return { success: true, data: result };
     
   } catch(error) {
@@ -258,8 +319,6 @@ async function saveCheckinToFeishu(name, phone, seat) {
     return { error: error.message };
   }
 }
-
-// 后台会从 data/checkins.json 读取数据，永远同步
 
 // 显示签到结果
 function showResult(name, seat, isRegistered) {
