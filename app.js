@@ -1,5 +1,6 @@
 // OPC 龙虾大会 - 活动签到系统
-// 纯前端 JSON 存储，无跨域问题
+// Vercel Serverless + GitHub 存储方案
+// 完全解决跨域问题，永久稳定
 
 // 全局变量
 let guests = [];
@@ -52,7 +53,7 @@ async function loadGuests() {
   } catch (error) {
     console.error('加载嘉宾名单失败', error);
     guests = [];
-    showToast('加载嘉宾名单加载失败');
+    showToast('加载嘉宾名单失败');
   }
 }
 
@@ -80,11 +81,11 @@ async function doCheckin() {
     // 2. 获取座位
     const seat = guest ? guest.seat : '前排';
     
-    // 3. 保存签到记录（即使飞书失败，本地保存也会继续）
+    // 3. 保存签到记录（即使云端失败，本地保存也会继续）
     try {
       await saveCheckin(name, phone, seat);
     } catch(saveError) {
-      console.error('保存到飞书失败，但本地已保存', saveError);
+      console.error('保存到云端失败，但本地已保存', saveError);
     }
     
     // 4. 语音欢迎，说出欢迎语（优雅语速）
@@ -93,8 +94,8 @@ async function doCheckin() {
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(greeting);
         utterance.lang = 'zh-CN';
-        utterance.rate = 0.8; // 放慢语速更优雅
-        utterance.pitch = 1.1; // 稍微升高一点音调更亲切
+        utterance.rate = 0.8;
+        utterance.pitch = 1.1;
         utterance.volume = 1.0;
         window.speechSynthesis.speak(utterance);
       }
@@ -105,7 +106,6 @@ async function doCheckin() {
     // 5. 播放签到成功提示音
     try {
       welcomeSound.currentTime = 0;
-      // 用户交互后才能播放音频，不await避免卡住
       welcomeSound.play().catch(e => console.log('播放提示音失败', e));
     } catch(e) {
       console.log('播放提示音失败', e);
@@ -134,7 +134,7 @@ function findGuest(name) {
   return found || null;
 }
 
-// 保存签到记录 - 同时保存到 localStorage + 飞书表格
+// 保存签到记录 - 同时保存到 localStorage + GitHub
 async function saveCheckin(name, phone, seat) {
   // 读取现有签到
   let checkins = [];
@@ -160,162 +160,80 @@ async function saveCheckin(name, phone, seat) {
   // 保存到 localStorage
   localStorage.setItem('signin_checkins', JSON.stringify(checkins));
   
-  // 保存到飞书多维表格
+  // 保存到 GitHub 通过 Vercel API
   await saveCheckinToFeishu(name, phone, seat);
   
   return Promise.resolve();
 }
 
-// 同步签到数据到飞书
-// 使用飞书机器人 Webhook，通过飞书自动化自动写入多维表格
-async function syncCheckinToFeishu(name, phone, seat) {
-  try {
-    // ========== 需要配置你的飞书机器人 Webhook ==========
-    // 配置方法：
-    // 1. 在飞书创建群，添加「群机器人」，获取 Webhook URL
-    // 2. 在飞书群 → 设置 → 群机器人 → 找到你的机器人 → 添加自动化
-    // 3. 触发条件：机器人收到消息 → 执行操作：飞书多维表格 → 添加记录
-    // 4. 绑定你的签到表格，设置字段映射即可
-    const FEISHU_WEBHOOK = ''; // 在此填入你的 Webhook 地址
-    // ======================================================
-
-    if (!FEISHU_WEBHOOK || !FEISHU_WEBHOOK.includes('open.feishu.cn')) {
-      console.log('未配置飞书 Webhook，仅保存到 GitHub');
-      return { skipped: true };
-    }
-
-    // 使用 no-cors 模式发送，不阻塞签到流程
-    const payload = {
-      msg_type: 'text',
-      content: {
-        text: `新签到\n姓名: ${name}\n手机号码: ${phone}\n座位号: ${seat}\n签到时间: ${new Date().toLocaleString('zh-CN')}`
-      }
-    };
-
-    // 使用 beacon 发送，页面跳转也能完成，不阻塞
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(payload));
-      console.log('已发送签到信息到飞书');
-    } else {
-      // fallback 使用图片请求
-      const img = new Image();
-      img.src = FEISHU_WEBHOOK + '?t=' + Date.now();
-      img.style.display = 'none';
-      document.body.appendChild(img);
-      setTimeout(() => img.remove(), 1000);
-    }
-
-    return { success: true };
-  } catch(error) {
-    console.error('同步到飞书失败', error);
-    return { error: error.message };
-  }
-}
-
-// 保存签到记录到 GitHub JSON 文件 + 同步到飞书
+// 通过 Vercel Serverless API 保存签到数据到 GitHub
+// 同时支持同步到飞书表格
 async function saveCheckinToFeishu(name, phone, seat) {
   try {
-    // 1. 保存到 GitHub
-    const result = await saveCheckinToGitHub(name, phone, seat);
-    
-    // 2. 同步到飞书（异步不阻塞）
-    syncCheckinToFeishu(name, phone, seat);
-    
-    return result;
-  } catch(error) {
-    console.error('保存失败', error);
-    return { error: error.message };
-  }
-}
+    // ========== 需要配置你的飞书机器人 Webhook（可选） ==========
+    // 配置方法：
+    // 1. 在飞书创建群，添加「群机器人」，获取 Webhook URL
+    // 2. 在飞书群 → 设置 → 群机器人 → 添加自动化
+    // 3. 触发条件：机器人收到消息 → 执行操作：飞书多维表格 → 添加记录
+    // 4. 绑定签到表格，设置字段映射
+    const FEISHU_WEBHOOK = ''; // 填入你的 Webhook 地址，不需要可以留空
+    // ==============================================================
 
-// 保存签到到 GitHub
-async function saveCheckinToGitHub(name, phone, seat) {
-  try {
-    // 获取仓库信息
-    const repoUrl = window.location.origin + window.location.pathname;
-    const match = repoUrl.match(/https?:\/\/github.com\/([^\/]+)\/([^\/]+)/) || 
-                  repoUrl.match(/https?:\/\/([^\.]+)\.github\.io\/([^\/]+)/);
-    const OWNER = match ? match[1] : 'a474878580-cloud';
-    const REPO = match ? match[2] : 'signin-system';
-    const FILE_PATH = 'data/checkins.json';
-    
-    // 从远程 URL 获取 token
-    let TOKEN = '';
-    try {
-      // token 已经配置在 git remote 中
-      const remoteResponse = await fetch(window.location.origin + '/.git/config');
-      const remoteText = await remoteResponse.text();
-      const tokenMatch = remoteText.match(/https?:\/\/([^:]+)@github.com/);
-      if (tokenMatch) {
-        TOKEN = tokenMatch[1];
+    // 获取 Vercel API 地址 - 自动识别
+    const getApiBase = () => {
+      if (window.location.host.includes('localhost')) {
+        return 'http://localhost:3000';
       }
-    } catch(e) {
-      console.log('无法从 git config 获取 token');
-    }
-    
-    if (!TOKEN) {
-      console.log('未找到 GitHub Token，无法自动保存到仓库');
-      return { skipped: true };
-    }
-    
-    // 使用 CORS 代理
-    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-    const apiUrl = proxyUrl + `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
-    
-    // 先读取现有文件
-    let checkins = [];
-    let sha = null;
-    
-    try {
-      const response = await fetch(apiUrl);
-      if (response.ok) {
-        const data = await response.json();
-        sha = data.sha;
-        const content = atob(data.content);
-        checkins = JSON.parse(content);
-      }
-    } catch (e) {
-      console.log('文件不存在，将创建新文件', e);
-      checkins = [];
-    }
-    
-    // 添加新签到
-    checkins.push({
-      name: name,
-      phone: phone,
-      seat: seat,
-      time: new Date().toISOString()
-    });
-    
-    // 提交更新到 GitHub
-    const contentStr = JSON.stringify(checkins, null, 2);
-    const content = btoa(unescape(encodeURIComponent(contentStr)));
-    
-    const body = {
-      message: `Add checkin: ${name} - ${new Date().toLocaleString('zh-CN')}`,
-      content: content
+      // 已部署到 Vercel 就是当前域名
+      return `https://${window.location.host}`;
     };
+    const apiBase = getApiBase();
     
-    if (sha) {
-      body.sha = sha;
-    }
-    
-    const response = await fetch(apiUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `token ${TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
+    // 1. 保存到 GitHub 通过 Vercel API
+    // Vercel API 在后端访问 GitHub，没有跨域问题，token 也不会暴露
+    const response = await fetch(`${apiBase}/api/save-checkin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone, seat })
     });
     
     const result = await response.json();
-    console.log('✓ GitHub 更新成功');
     
-    return { success: true, data: result };
+    if (result.success) {
+      console.log('✓ 签到已保存到 GitHub');
+    } else {
+      console.error('保存失败', result.error);
+    }
+    
+    // 2. 如果配置了飞书，同步发送到飞书
+    if (FEISHU_WEBHOOK && FEISHU_WEBHOOK.includes('open.feishu.cn')) {
+      try {
+        const payload = {
+          msg_type: 'text',
+          content: {
+            text: `【新签到】\n姓名: ${name}\n手机号码: ${phone}\n座位号: ${seat}\n时间: ${new Date().toLocaleString('zh-CN')}`
+          }
+        };
+        // 使用 no-cors 发送
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(payload));
+        } else {
+          const img = new Image();
+          img.src = FEISHU_WEBHOOK + '?t=' + Date.now();
+          img.style.display = 'none';
+          document.body.appendChild(img);
+          setTimeout(() => img.remove(), 1000);
+        }
+        console.log('✓ 已同步到飞书');
+      } catch(e) {
+        console.error('同步到飞书失败', e);
+      }
+    }
+    
+    return result;
     
   } catch(error) {
-    console.error('保存到 GitHub 失败，数据已保存在本地', error);
+    console.error('保存失败，数据已保存在本地', error);
     return { error: error.message };
   }
 }

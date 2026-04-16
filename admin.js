@@ -47,24 +47,37 @@ async function loadGuests() {
   }
 }
 
-// 加载签到记录 - 从 GitHub JSON 文件读取
-// 这种方式完全没有跨域问题，数据永久保存在仓库
+// 加载签到记录 - 从 Vercel API 获取
+// Vercel API 从 GitHub JSON 读取，永远是最新数据
 async function loadCheckins() {
   return new Promise(async (resolve) => {
     try {
-      // 直接读取 data/checkins.json 文件，GitHub Pages 托管，完全没问题
-      const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
-      const url = base + 'data/checkins.json?t=' + Date.now();
+      // 获取 Vercel API 地址
+      const getApiBase = () => {
+        if (window.location.host.includes('localhost')) {
+          return 'http://localhost:3000';
+        }
+        return `https://${window.location.host}`;
+      };
+      const apiBase = getApiBase();
       
-      const response = await fetch(url);
+      // 从 API 获取最新数据
+      const response = await fetch(`${apiBase}/api/get-checkins`);
       let checkins = [];
       
       if (response.ok) {
-        checkins = await response.json();
-        console.log('从 data/checkins.json 加载了', checkins.length, '条签到记录');
+        const data = await response.json();
+        checkins = data.checkins || [];
+        console.log('从 API 加载了', checkins.length, '条签到记录');
       } else {
-        console.log('data/checkins.json 不存在，使用本地缓存');
-        checkins = [];
+        console.log('API 请求失败，回退到直接读取 JSON');
+        // 回退到直接读取
+        const base = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+        const url = base + 'data/checkins.json?t=' + Date.now();
+        const jsonResponse = await fetch(url);
+        if (jsonResponse.ok) {
+          checkins = await jsonResponse.json();
+        }
       }
       
       // 同时合并 localStorage 中未提交的记录
