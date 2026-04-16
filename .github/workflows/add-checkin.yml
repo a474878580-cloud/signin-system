@@ -1,0 +1,69 @@
+name: Add Checkin
+
+on:
+  repository_dispatch:
+    types: [add-checkin]
+
+jobs:
+  add-checkin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Add checkin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get checkin data from request
+          NAME=$(echo ${{ toJson(github.event.client_payload) }} | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('name', ''))")
+          PHONE=$(echo ${{ toJson(github.event.client_payload) }} | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('phone', ''))")
+          SEAT=$(echo ${{ toJson(github.event.client_payload) }} | python3 -c "import json, sys; data = json.load(sys.stdin); print(data.get('seat', ''))")
+          
+          echo "Adding checkin: $NAME ($PHONE) - $SEAT"
+          
+          # Read existing checkins
+          FILE="data/checkins.json"
+          if [ -f "$FILE" ]; then
+             CHECKINS=$(cat "$FILE")
+          else
+             CHECKINS="[]"
+          fi
+          
+          # Add new checkin using python
+          python3 << 'EOF'
+import json
+import sys
+
+name = sys.argv[1]
+phone = sys.argv[2]
+seat = sys.argv[3]
+
+with open('data/checkins.json', 'r', encoding='utf-8') as f:
+    try:
+        checkins = json.load(f)
+    except:
+        checkins = []
+
+new_checkin = {
+    "name": name,
+    "phone": phone,
+    "seat": seat,
+    "time": __import__('datetime').datetime.utcnow().isoformat()
+}
+
+checkins.append(new_checkin)
+
+with open('data/checkins.json', 'w', encoding='utf-8') as f:
+    json.dump(checkins, f, indent=2, ensure_ascii=False)
+
+print(f"Added checkin: {name} - {phone}")
+EOF "$NAME" "$PHONE" "$SEAT"
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Add checkin: ${{ github.event.client_payload.name }} - $(date +'%Y-%m-%d %H:%M:%S')"
+          file_pattern: data/checkins.json
