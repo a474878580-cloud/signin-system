@@ -224,11 +224,7 @@ async function saveCheckinToFeishu(name, phone, seat) {
     
   } catch(error) {
     console.error('保存到飞书失败，数据已保存在本地', error);
-    console.log('
-解决跨域方案：
-1. 使用公共 cors 代理（已配置，如上面代码）
-2. 或者自己部署 cors 代理
-3. 或者使用云函数做中转');
+    console.log('解决跨域方案： 1. 使用公共 cors 代理（已配置，如上面代码） 2. 或者自己部署 cors 代理 3. 或者使用云函数做中转');
     return { error: error.message };
   }
 }
