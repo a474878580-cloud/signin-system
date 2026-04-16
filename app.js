@@ -1,14 +1,9 @@
 // OPC 龙虾大会 - 活动签到系统
-// 纯前端 + 飞书机器人 + 飞书自动化
-// 数据直接存在飞书表格，简单稳定
+// 前端 + Vercel API + 飞书多维表格
+// 数据直接存在飞书表格，完全解决跨域
 
 // 全局变量
 let guests = [];
-
-// ========== 配置 ==========
-// 在这里填入你的飞书机器人 Webhook
-const FEISHU_WEBHOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/';
-// ========== 配置结束 ==========
 
 // DOM 元素
 const checkinForm = document.getElementById('checkin-form');
@@ -86,7 +81,7 @@ async function doCheckin() {
     // 2. 获取座位
     const seat = guest ? guest.seat : '前排';
     
-    // 3. 保存到飞书
+    // 3. 保存到飞书表格
     await saveCheckinToFeishu(name, phone, seat);
     
     // 4. 保存到本地
@@ -140,7 +135,7 @@ function findGuest(name) {
   return found || null;
 }
 
-// 保存到本地
+// 保存到本地缓存
 function saveToLocal(name, phone, seat) {
   let checkins = [];
   try {
@@ -164,56 +159,34 @@ function saveToLocal(name, phone, seat) {
   localStorage.setItem('signin_checkins', JSON.stringify(checkins));
 }
 
-// 保存签到到飞书
-// 通过飞书机器人 Webhook 发送，飞书自动化自动写入表格
+// 保存签到到飞书表格 - 通过 Vercel API
 async function saveCheckinToFeishu(name, phone, seat) {
-  return new Promise((resolve, reject) => {
-    // 如果没配置 Webhook，直接成功
-    if (!FEISHU_WEBHOOK || FEISHU_WEBHOOK === 'https://open.feishu.cn/open-apis/bot/v2/hook/') {
-      showToast('请配置飞书机器人 Webhook');
-      resolve();
-      return;
+  // 获取 API 地址
+  const getApiBase = () => {
+    if (window.location.host.includes('localhost')) {
+      return 'http://localhost:3000';
     }
-    
-    const payload = {
-      msg_type: 'text',
-      content: {
-        text: `【新签到】
-姓名: ${name}
-手机号码: ${phone}
-座位号: ${seat}
-签到时间: ${new Date().toLocaleString('zh-CN')}`
-      }
-    };
-    
-    // 使用 no-cors 发送，不卡住页面
-    if (navigator.sendBeacon) {
-      const success = navigator.sendBeacon(FEISHU_WEBHOOK, JSON.stringify(payload));
-      console.log('已发送到飞书', success);
-      showToast('签到成功！数据已保存到飞书表格');
-      resolve();
-    } else {
-      // fallback 使用图片请求
-      const img = new Image();
-      img.onerror = function() {
-        // 跨域就是成功，因为飞书不返回图片
-        console.log('已发送到飞书');
-        showToast('签到成功！数据已保存到飞书表格');
-        resolve();
-      };
-      img.onload = function() {
-        console.log('已发送到飞书');
-        showToast('签到成功！数据已保存到飞书表格');
-        resolve();
-      };
-      img.src = FEISHU_WEBHOOK + '?t=' + Date.now() + '&data=' + encodeURIComponent(JSON.stringify(payload));
-      img.style.display = 'none';
-      document.body.appendChild(img);
-      setTimeout(() => {
-        try { document.body.removeChild(img); } catch(e) {}
-      }, 1000);
-    }
+    return `https://${window.location.host}`;
+  };
+  const apiBase = getApiBase();
+  
+  const response = await fetch(`${apiBase}/api/save-checkin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, phone, seat })
   });
+  
+  const result = await response.json();
+  
+  if (result.success) {
+    console.log('✓ 签到已保存到飞书表格');
+    showToast('✓ 签到成功！数据已保存');
+    return result;
+  } else {
+    console.error('保存失败', result.error);
+    showToast('保存失败: ' + (result.error || '未知错误'));
+    throw new Error(result.error);
+  }
 }
 
 // 显示签到结果
