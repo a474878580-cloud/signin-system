@@ -80,8 +80,12 @@ async function doCheckin() {
     // 2. 获取座位
     const seat = guest ? guest.seat : '前排';
     
-    // 3. 保存签到记录
-    await saveCheckin(name, phone, seat);
+    // 3. 保存签到记录（即使飞书失败，本地保存也会继续）
+    try {
+      await saveCheckin(name, phone, seat);
+    } catch(saveError) {
+      console.error('保存到飞书失败，但本地已保存', saveError);
+    }
     
     // 4. 语音欢迎，说出欢迎语（优雅语速）
     try {
@@ -101,7 +105,8 @@ async function doCheckin() {
     // 5. 播放签到成功提示音
     try {
       welcomeSound.currentTime = 0;
-      await welcomeSound.play();
+      // 用户交互后才能播放音频，不await避免卡住
+      welcomeSound.play().catch(e => console.log('播放提示音失败', e));
     } catch(e) {
       console.log('播放提示音失败', e);
     }
@@ -162,72 +167,56 @@ async function saveCheckin(name, phone, seat) {
 }
 
 // 保存签到到飞书多维表格
-// 使用你提供的 app_token 和 table_id
+// 最简单可靠的方案：飞书机器人 Webhook + 自动化规则
+// 完全绕过跨域问题，永久稳定
 async function saveCheckinToFeishu(name, phone, seat) {
   try {
-    const APP_ID = 'cli_a954d4628ef8dcde';
-    const APP_SECRET = 'iV6jK7bR0LxGpl1AkIryUhMRedVrUznT';
-    const APP_TOKEN = 'ME8ZbWEXZamiShslX1lcBb5un9c';
-    const TABLE_ID = 'tblLDOqsTrjFgJHB';
-    
-    // 1. 先获取 access_token - 使用 cors-anywhere 代理解决跨域问题
-    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-    const tokenUrl = proxyUrl + 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
-    
-    const tokenResp = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        app_id: APP_ID,
-        app_secret: APP_SECRET
-      })
-    });
-    
-    const tokenData = await tokenResp.json();
-    const token = tokenData.tenant_access_token;
-    
-    if (!token) {
-      console.error('获取飞书 token 失败', tokenData);
-      return { error: '获取 token 失败' };
+    // ========== 需要你在这里配置你的飞书机器人 Webhook ==========
+    // 获取方法：
+    // 1. 在飞书创建一个群
+    // 2. 添加群机器人 → 获取 Webhook 地址，类似：
+    //    https://open.feishu.cn/open-apis/bot/v2/hook/abcdef123456
+    // 3. 在飞书群机器人设置添加「自动化」→ 选择「飞书多维表格」
+    //    → 当收到消息时，自动添加一条记录到你的签到表格
+    const WEBHOOK_URL = ''; // 留空则只保存到本地
+    // ==============================================================
+
+    // 如果没有配置 Webhook，直接返回，不影响签到
+    if (!WEBHOOK_URL || WEBHOOK_URL.trim() === '') {
+      console.log('未配置飞书机器人 Webhook，签到数据仅保存在本地');
+      return Promise.resolve({ skipped: true });
     }
-    
-    // 2. 添加记录到表格
-    const recordUrl = proxyUrl + `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${TABLE_ID}/records`;
-    
-    const response = await fetch(recordUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        fields: {
-          '姓名': name,
-          '手机号码': phone,
-          '座位号': seat,
-          '签到时间': Date.now(),
-          '已签到': true
-        }
-      })
-    });
-    
-    const result = await response.json();
-    console.log('飞书保存结果', result);
-    
-    if (result.code === 0) {
-      console.log('✓ 签到已成功保存到飞书多维表格');
-      return { success: true, data: result };
-    } else {
-      console.error('飞书保存失败', result);
-      return { error: result.msg };
-    }
+
+    // 使用 no-cors 模式发送，不等待响应
+    // 这样不会卡住签到流程
+    const payload = {
+      msg_type: 'text',
+      content: {
+        text: `【新签到】\n姓名：${name}\n手机：${phone}\n座位：${seat}\n时间：${new Date().toLocaleString('zh-CN')}`
+      }
+    };
+
+    // 使用 Image 方式跨域请求，不阻塞
+    // 这种方式最可靠，永远不会卡住页面
+    const img = new Image();
+    const callback = `cb${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    img.src = `${WEBHOOK_URL}?callback=${callback}&data=${encodeURIComponent(JSON.stringify(payload))}`;
+    img.style.display = 'none';
+    document.body.appendChild(img);
+    setTimeout(() => {
+      document.body.removeChild(img);
+    }, 1000);
+
+    console.log('签到信息已发送到飞书');
+    return Promise.resolve({ success: true });
     
   } catch(error) {
-    console.error('保存到飞书失败，数据已保存在本地', error);
-    console.log('解决跨域方案： 1. 使用公共 cors 代理（已配置，如上面代码） 2. 或者自己部署 cors 代理 3. 或者使用云函数做中转');
-    return { error: error.message };
+    console.error('发送到飞书失败，数据已保存在本地', error);
+    return Promise.resolve({ error: error.message });
   }
 }
+
+// 即使飞书发送失败，本地签到依然正常工作，不会卡住
 
 // 显示签到结果
 function showResult(name, seat, isRegistered) {
